@@ -1,0 +1,4 @@
+psycopg[binary]>=3.2.10
+python-dotenv==1.0.0
+gspread==6.1.2
+google-auth==2.29.0
