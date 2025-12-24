@@ -33,6 +33,18 @@ def parse_arguments() -> Tuple[str, str, bool]:
         default=None
     )
     parser.add_argument(
+        '--from-date-offset',
+        type=int,
+        help='Offset in days from today for start date (e.g., -7 for 7 days ago)',
+        default=None
+    )
+    parser.add_argument(
+        '--to-date-offset',
+        type=int,
+        help='Offset in days from today for end date (e.g., 0 for today)',
+        default=None
+    )
+    parser.add_argument(
         '--overwrite',
         action='store_true',
         help='Overwrite existing rows with matching dates instead of skipping them'
@@ -40,10 +52,22 @@ def parse_arguments() -> Tuple[str, str, bool]:
 
     args = parser.parse_args()
 
-    # Default to today if not specified
-    today = datetime.now().strftime('%Y-%m-%d')
-    from_date = args.from_date if args.from_date else today
-    to_date = args.to_date if args.to_date else today
+    # Calculate dates based on offsets or use provided dates
+    today = datetime.now()
+
+    if args.from_date_offset is not None:
+        from_date = (today + timedelta(days=args.from_date_offset)).strftime('%Y-%m-%d')
+    elif args.from_date:
+        from_date = args.from_date
+    else:
+        from_date = today.strftime('%Y-%m-%d')
+
+    if args.to_date_offset is not None:
+        to_date = (today + timedelta(days=args.to_date_offset)).strftime('%Y-%m-%d')
+    elif args.to_date:
+        to_date = args.to_date
+    else:
+        to_date = today.strftime('%Y-%m-%d')
 
     # Validate date format
     try:
@@ -152,17 +176,38 @@ def update_or_append_row(
 ):
     """Update an existing row or append a new one based on overwrite flag."""
     try:
-        row = [date_str, juan_total, texans_total]
-
         if date_str in existing_dates:
+            row_num = existing_dates[date_str]
             if overwrite:
-                row_num = existing_dates[date_str]
-                sheet.update(values=[row], range_name=f'A{row_num}:C{row_num}')
+                # Create formulas for existing row
+                sum_formula = f'=SUM(B{row_num}:C{row_num})'
+                sumifs_formula = f'=SUMIFS(\'Απαντήσεις φόρμας\'!C:C; \'Απαντήσεις φόρμας\'!A:A; ">="&DATEVALUE($A{row_num}); \'Απαντήσεις φόρμας\'!A:A; "<"&(DATEVALUE($A{row_num})+1))'
+
+                # For the cumulative formula, reference the previous row
+                prev_row = row_num - 1
+                cumulative_formula = f'=F{prev_row}+D{row_num}-E{row_num}' if prev_row > 0 else f'=D{row_num}-E{row_num}'
+
+                row = [date_str, juan_total, texans_total, sum_formula, sumifs_formula, cumulative_formula]
+                sheet.update(values=[row], range_name=f'A{row_num}:F{row_num}', value_input_option='USER_ENTERED')
                 print(f"Updated row {row_num}: {row}")
             else:
                 print(f"Skipping {date_str} (already exists)")
         else:
-            sheet.append_row(row)
+            # For new rows, determine the next row number
+            # Get current row count to determine the row number
+            all_values = sheet.get_all_values()
+            row_num = len(all_values) + 1
+
+            # Create formulas for new row
+            sum_formula = f'=SUM(B{row_num}:C{row_num})'
+            sumifs_formula = f'=SUMIFS(\'Απαντήσεις φόρμας\'!C:C; \'Απαντήσεις φόρμας\'!A:A; ">="&DATEVALUE($A{row_num}); \'Απαντήσεις φόρμας\'!A:A; "<"&(DATEVALUE($A{row_num})+1))'
+
+            # For the cumulative formula, reference the previous row
+            prev_row = row_num - 1
+            cumulative_formula = f'=F{prev_row}+D{row_num}-E{row_num}' if prev_row > 0 else f'=D{row_num}-E{row_num}'
+
+            row = [date_str, juan_total, texans_total, sum_formula, sumifs_formula, cumulative_formula]
+            sheet.append_row(row, value_input_option='USER_ENTERED')
             print(f"Added new row: {row}")
     except Exception as e:
         print(f"Error writing to Google Sheets: {e}")
