@@ -117,6 +117,7 @@ def fetch_order_total(conn, date: str) -> float:
         WHERE (sp_id=2 OR sp_id=3)
         AND payment_id=1
         AND order_total IS NOT NULL
+        AND order_status_id <> 6
         AND fo_day = %s
     """
 
